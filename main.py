@@ -50,7 +50,7 @@ def train():
         num_train_epochs=2,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=8,
-        learning_rate=5e-5,
+        learning_rate=2e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
         logging_steps=1,
