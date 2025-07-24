@@ -88,7 +88,7 @@ def train():
 
     pipe = pipeline(
         "text-generation",
-        model=cfg.output_dir,
+        model=model,
         device=0 if device == "cuda" else "cpu"
     )
     messages = [
