@@ -47,7 +47,7 @@ def train():
 
     cfg = SFTConfig(
         output_dir="PG_smollm",
-        num_train_epochs=3,
+        num_train_epochs=2,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=8,
         learning_rate=5e-5,
