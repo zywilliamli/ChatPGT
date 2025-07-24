@@ -91,7 +91,6 @@ def train():
         "Write me a Paul Graham essay about the power of AI",
         max_new_tokens=1024,
         eos_token_id=None,  # This disables early stopping!
-        pad_token_id=tokenizer.eos_token_id
     )[0]["generated_text"]
     print(out)
 
