@@ -27,9 +27,9 @@ def train():
 
     raw = load_dataset("sgoel9/paul_graham_essays")['train']
 
-    def build_chat(example: dict, max_len: int = 1024) -> dict:
+    def build_chat(example: dict) -> dict:
         messages = [
-            {"role": "user", "content": f"Write a Paul Graham essay titled {example['title'][:max_len]}"},
+            {"role": "user", "content": f"Write a Paul Graham essay titled {example['title']}"},
             {"role": "assistant", "content": str(example["text"])}
         ]
         text = tokenizer.apply_chat_template(
@@ -89,7 +89,7 @@ def train():
     )
     out = pipe(
         "Write me a Paul Graham essay about the power of AI",
-        max_new_tokens=1024
+        max_new_tokens=10240
     )[0]["generated_text"]
     print(out)
 
