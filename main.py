@@ -47,10 +47,10 @@ def train():
 
     cfg = SFTConfig(
         output_dir="PG_smollm",
-        num_train_epochs=3,
+        num_train_epochs=2,
         per_device_train_batch_size=8,
         gradient_accumulation_steps=2,
-        learning_rate=5e-6,
+        learning_rate=1e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
         logging_steps=1,
@@ -66,6 +66,7 @@ def train():
         gradient_checkpointing=True,
         max_seq_length=1024,
         dataset_text_field="text",
+        max_grad_norm=1.0
     )
     trainer = SFTTrainer(
         model=model,
