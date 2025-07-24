@@ -70,7 +70,7 @@ def train():
         save_steps=500,
         weight_decay=0.01,
         report_to=["tensorboard"],  # live metrics:  http://localhost:6006
-        fp16=True,
+        fp16=False,
         bf16=False,
         packing=False,  # set True if packing multiple msgs
         dataloader_pin_memory=True,
