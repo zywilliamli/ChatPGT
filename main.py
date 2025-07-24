@@ -87,8 +87,17 @@ def train():
         model=cfg.output_dir,
         device=0 if device == "cuda" else "cpu"
     )
+    messages = [
+        {"role": "user",
+         "content": "Write a Paul Graham essay about the power of AI"}
+    ]
+    prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True  # tells the model “your turn next”
+    )
     out = pipe(
-        "Write me a Paul Graham essay about the power of AI",
+        prompt,
         max_new_tokens=1024,
         do_sample=True,
         top_p=0.9,
