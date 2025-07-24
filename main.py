@@ -37,25 +37,13 @@ def train():
             tokenize=False,
             add_generation_prompt=False,
         )
-        # Properly truncate
-        tokens = tokenizer(
-            text,
-            truncation=True,
-            max_length=max_len,
-            return_tensors="pt"
-        )
-
-        # Decode back to text for SFTTrainer
-        truncated_text = tokenizer.decode(tokens['input_ids'][0], skip_special_tokens=False)
-
-        return {"text": truncated_text}
+        return {"text": text}
 
     ds = raw.map(
         build_chat,
         remove_columns=raw.column_names,
-        fn_kwargs={"max_len": 1024},
     )
-    ds = ds.train_test_split(test_size=0.1, seed=42)
+    ds = ds.train_test_split(test_size=0.2, seed=42)
 
     cfg = SFTConfig(
         output_dir="PG_smollm",
