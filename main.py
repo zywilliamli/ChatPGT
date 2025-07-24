@@ -25,6 +25,10 @@ def train():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    dropout_prob = 0.1
+    for module in model.modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.p = dropout_prob
     raw = load_dataset("sgoel9/paul_graham_essays")['train']
 
     def build_chat(example: dict) -> dict:
