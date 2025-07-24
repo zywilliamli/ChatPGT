@@ -85,6 +85,7 @@ def train():
     trainer.train()
     trainer.save_model(cfg.output_dir)
     tokenizer.save_pretrained(cfg.output_dir)
+    model.config.save_pretrained(cfg.output_dir)
 
     pipe = pipeline(
         "text-generation",
