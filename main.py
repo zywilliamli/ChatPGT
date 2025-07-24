@@ -89,7 +89,7 @@ def train():
     )
     out = pipe(
         "Write me a Paul Graham essay about the power of AI",
-        max_new_tokens=64
+        max_new_tokens=1024
     )[0]["generated_text"]
     print(out)
 
