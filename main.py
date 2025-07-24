@@ -89,7 +89,16 @@ def train():
     )
     out = pipe(
         "Write me a Paul Graham essay about the power of AI",
-        max_new_tokens=10240
+        max_new_tokens=1024,
+        do_sample=True,
+        temperature=0.8,
+        top_p=0.9,
+        repetition_penalty=1.1,
+        pad_token_id=tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        early_stopping=False,  # Don't stop early
+        num_return_sequences=1
+
     )[0]["generated_text"]
     print(out)
 
