@@ -90,7 +90,9 @@ def train():
     out = pipe(
         "Write me a Paul Graham essay about the power of AI",
         max_new_tokens=1024,
-        eos_token_id=None,  # This disables early stopping!
+        do_sample=True,
+        top_p=0.9,
+        temperature=0.7
     )[0]["generated_text"]
     print(out)
 
