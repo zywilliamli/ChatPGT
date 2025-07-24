@@ -49,7 +49,7 @@ def train():
         output_dir="PG_smollm",
         num_train_epochs=2,
         per_device_train_batch_size=4,
-        gradient_accumulation_steps=16,
+        gradient_accumulation_steps=1,
         learning_rate=5e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
