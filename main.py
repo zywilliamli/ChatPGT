@@ -50,14 +50,14 @@ def train():
     ds = ds.train_test_split(test_size=0.2, seed=42)
 
     cfg = SFTConfig(
-        output_dir="smol_paul_graham_3b",
+        output_dir="smolpg_3b",
         num_train_epochs=2,
         per_device_train_batch_size=8,
         gradient_accumulation_steps=2,
         learning_rate=1e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
-        logging_steps=10,
+        logging_steps=1,
         eval_steps=50,
         save_steps=500,
         weight_decay=0.005,
@@ -88,7 +88,7 @@ def train():
 
     pipe = pipeline(
         "text-generation",
-        model=model,
+        model=cfg.output_dir,
         device=0 if device == "cuda" else "cpu"
     )
     messages = [
