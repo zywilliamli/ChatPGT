@@ -88,7 +88,7 @@ def train():
     )
 
     if device == "cuda":
-        torch.mps.empty_cache()
+        torch.cuda.empty_cache()
 
     trainer.train()
     trainer.save_model(cfg.output_dir)
@@ -96,8 +96,8 @@ def train():
 
     pipe = pipeline(
         "text-generation",
-        model=cfg.output_dir,  # <- points to "smollm‑yelp‑sft"
-        device="mps"  # or "cpu" if you’re on Intel
+        model=cfg.output_dir,
+        device=0 if device == "cuda" else "cpu"
     )
     out = pipe(
         "Write me a Paul Graham essay about the power of AI",
