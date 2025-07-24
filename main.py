@@ -11,16 +11,14 @@ from trl import SFTTrainer, SFTConfig
 
 
 def train():
-    os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
-
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
     model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float32,
+        torch_dtype=torch.float16,
         device_map="auto"
     )
 
@@ -61,9 +59,9 @@ def train():
 
     cfg = SFTConfig(
         output_dir="PG_smollm",
-        num_train_epochs=1,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
+        num_train_epochs=3,
+        per_device_train_batch_size=8,
+        gradient_accumulation_steps=2,
         learning_rate=1e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
@@ -72,12 +70,12 @@ def train():
         save_steps=500,
         weight_decay=0.01,
         report_to=["tensorboard"],  # live metrics:  http://localhost:6006
-        fp16=False,  # MPS ignores fp16; keep False
+        fp16=True,
         bf16=False,
         packing=False,  # set True if packing multiple msgs
-        dataloader_pin_memory=False,
+        dataloader_pin_memory=True,
         dataloader_num_workers=0,
-        gradient_checkpointing=False,
+        gradient_checkpointing=True,
         max_seq_length=1024,
         dataset_text_field="text",
     )
@@ -89,7 +87,7 @@ def train():
         processing_class=tokenizer
     )
 
-    if device == "mps":
+    if device == "cuda":
         torch.mps.empty_cache()
 
     trainer.train()
