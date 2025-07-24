@@ -64,7 +64,7 @@ def train():
         gradient_accumulation_steps=4,
         learning_rate=5e-5,
         warmup_ratio=0.1,
-        lr_scheduler_type="linear",
+        lr_scheduler_type="cosine",
         logging_steps=5,
         eval_steps=100,
         save_steps=500,
