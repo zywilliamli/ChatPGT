@@ -18,7 +18,7 @@ def train():
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float32,
         device_map="auto"
     )
 
@@ -60,11 +60,11 @@ def train():
     cfg = SFTConfig(
         output_dir="PG_smollm",
         num_train_epochs=3,
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=2,
-        learning_rate=1e-5,
-        warmup_ratio=0.03,
-        lr_scheduler_type="cosine",
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=5e-5,
+        warmup_ratio=0.1,
+        lr_scheduler_type="linear",
         logging_steps=5,
         eval_steps=100,
         save_steps=500,
