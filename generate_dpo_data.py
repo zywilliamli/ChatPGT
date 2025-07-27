@@ -170,6 +170,32 @@ class DPODataGenerator:
         """Check if a model is a local Hugging Face model."""
         return model_name in self.local_model_names
     
+    def _clean_thinking_tags(self, text: str) -> str:
+        """Remove thinking tags from generated text (for models like Qwen that use <think>...</think>)."""
+        import re
+        
+        original_length = len(text)
+        
+        # Remove properly closed thinking tags and their content
+        # This handles both single-line and multi-line thinking sections
+        cleaned_text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Handle incomplete thinking tags - be more conservative
+        # Remove from <think> to the end of the current paragraph (double newline) or end of text
+        # This prevents removing valid content that might follow
+        cleaned_text = re.sub(r'<think[^>]*>.*?(?:\n\s*\n|$)', '', cleaned_text, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Clean up any extra whitespace that might be left
+        cleaned_text = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned_text)  # Multiple newlines to double
+        cleaned_text = cleaned_text.strip()
+        
+        # Log if thinking tags were found and removed
+        if len(cleaned_text) < original_length:
+            removed_chars = original_length - len(cleaned_text)
+            print(f"    🧠 Cleaned thinking tags (removed {removed_chars} characters)")
+        
+        return cleaned_text
+    
     def load_wikipedia_data(self, num_samples: int = 10) -> List[str]:
         """Load Wikipedia dataset and extract random topics."""
         print("Loading Wikipedia dataset...")
@@ -261,6 +287,9 @@ class DPODataGenerator:
             # Remove the prompt from the generated text
             if generated_text.startswith(formatted_prompt):
                 generated_text = generated_text[len(formatted_prompt):].strip()
+            
+            # Clean up thinking tags (especially for Qwen models)
+            generated_text = self._clean_thinking_tags(generated_text)
             
             return generated_text
             
