@@ -461,7 +461,6 @@ Respond with a JSON object containing:
                     {"role": "system", "content": "You are an expert judge of writing quality and style. Provide fair, detailed evaluations."},
                     {"role": "user", "content": judgment_prompt}
                 ],
-                max_completion_tokens=500,
             )
             
             # Parse the JSON response
