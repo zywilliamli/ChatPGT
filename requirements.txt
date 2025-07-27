@@ -1,5 +1,17 @@
+# Core ML libraries
 torch
 transformers
 datasets
 trl
 tensorboard
+
+# API and data processing
+openai
+pandas
+numpy
+tqdm
+
+# Note: For CUDA support and local models, ensure you have:
+# - CUDA-compatible PyTorch installation
+# - Sufficient GPU memory (8GB+ recommended)
+# - For local models: HuggingFaceTB/SmolLM3-3B, meta-llama/Meta-Llama-3-8B-Instruct
