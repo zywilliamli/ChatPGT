@@ -1,3 +1,24 @@
+"""
+DPO Data Generator with Hybrid Model Support
+
+This script generates synthetic Paul Graham essays using a hybrid approach:
+- OpenAI models: Run in parallel for fast API-based generation
+- Local models: Run sequentially to avoid GPU memory conflicts
+
+Key features:
+- Automatic CUDA detection and local model loading
+- GPU-safe sequential processing for local models  
+- Parallel processing for OpenAI API calls
+- Rate limiting and error handling
+- Memory management for large models
+
+Usage:
+    python generate_dpo_data.py  # Automatic hybrid mode
+    
+For debugging or very limited GPU memory:
+    generator = DPODataGenerator(force_sequential=True)
+"""
+
 import os
 import random
 import pandas as pd
@@ -23,10 +44,11 @@ except ImportError:
 
 
 class DPODataGenerator:
-    def __init__(self, openai_api_key: str = None, max_workers: int = 10):
+    def __init__(self, openai_api_key: str = None, max_workers: int = 10, force_sequential: bool = False):
         """Initialize the DPO data generator with OpenAI client and optional local models."""
         self.client = OpenAI(api_key=openai_api_key or os.getenv("OPENAI_API_KEY"))
-        self.max_workers = max_workers  # Number of parallel workers
+        self.max_workers = max_workers  # Number of parallel workers for OpenAI
+        self.force_sequential = force_sequential  # Force all processing to be sequential
         self.rate_limit_lock = threading.Lock()
         self.last_request_time = 0
         self.min_request_interval = 0.05  # 50ms between requests for rate limiting
@@ -75,21 +97,38 @@ class DPODataGenerator:
             return
         
         print("Loading local models...")
+        
+        # Clear GPU cache before loading
+        try:
+            torch.cuda.empty_cache()
+        except:
+            pass
+        
+        successfully_loaded = []
+        
         for model_name in self.local_model_names:
             try:
                 print(f"  Loading {model_name}...")
+                
+                # Check available GPU memory
+                if torch.cuda.is_available():
+                    gpu_memory = torch.cuda.get_device_properties(0).total_memory
+                    print(f"    Available GPU memory: {gpu_memory / 1e9:.1f}GB")
                 
                 # Load tokenizer
                 tokenizer = AutoTokenizer.from_pretrained(model_name)
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
                 
-                # Load model
+                # Load model with memory management
                 model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.bfloat16,
                     device_map="auto",
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True,
+                    # Add memory management options
+                    attn_implementation="flash_attention_2" if "llama" in model_name.lower() else None
                 )
                 
                 # Create pipeline
@@ -103,15 +142,29 @@ class DPODataGenerator:
                 
                 self.local_models[model_name] = pipe
                 self.local_tokenizers[model_name] = tokenizer
-                print(f"  ✓ {model_name} loaded successfully")
+                successfully_loaded.append(model_name)
+                print(f"  ✅ {model_name} loaded successfully")
+                
+                # Show GPU memory usage after loading
+                if torch.cuda.is_available():
+                    memory_used = torch.cuda.memory_allocated(0)
+                    print(f"    GPU memory used: {memory_used / 1e9:.1f}GB")
                 
             except Exception as e:
                 print(f"  ❌ Failed to load {model_name}: {e}")
-                # Remove from list if failed to load
-                if model_name in self.local_model_names:
-                    self.local_model_names.remove(model_name)
+                print(f"    This might be due to insufficient GPU memory or model availability")
+                # Clear cache and continue with next model
+                try:
+                    torch.cuda.empty_cache()
+                except:
+                    pass
+        
+        # Update the list to only include successfully loaded models
+        self.local_model_names = successfully_loaded
         
         print(f"Successfully loaded {len(self.local_models)} local models")
+        if len(self.local_models) == 0 and self.device == "cuda":
+            print("⚠️  No local models loaded. Will use OpenAI models only.")
     
     def _is_local_model(self, model_name: str) -> bool:
         """Check if a model is a local Hugging Face model."""
@@ -189,15 +242,18 @@ class DPODataGenerator:
             else:
                 formatted_prompt = f"System: {messages[0]['content']}\n\nUser: {messages[1]['content']}\n\nAssistant:"
             
-            # Generate response
-            outputs = pipe(
-                formatted_prompt,
-                max_new_tokens=1500,
-                do_sample=True,
-                temperature=0.8,
-                top_p=0.9,
-                pad_token_id=tokenizer.eos_token_id
-            )
+            # Generate response with GPU memory management
+            with torch.cuda.device(0) if torch.cuda.is_available() else torch.no_grad():
+                outputs = pipe(
+                    formatted_prompt,
+                    max_new_tokens=1500,
+                    do_sample=True,
+                    temperature=0.8,
+                    top_p=0.9,
+                    pad_token_id=tokenizer.eos_token_id,
+                    # Add batch size limitation for memory management
+                    batch_size=1
+                )
             
             # Extract the generated text
             generated_text = outputs[0]["generated_text"]
@@ -210,6 +266,11 @@ class DPODataGenerator:
             
         except Exception as e:
             print(f"Error generating essay with local model '{model}' for topic '{topic}': {e}")
+            # Clear GPU cache on error
+            try:
+                torch.cuda.empty_cache()
+            except:
+                pass
             return f"Error: {str(e)}"
     
     def generate_essay(self, topic: str, model: str) -> str:
@@ -254,37 +315,101 @@ class DPODataGenerator:
         }
     
     def generate_all_essays(self, topics: List[str], output_csv: str = "paul_graham_essays.csv"):
-        """Generate essays for all topics using all models in parallel."""
+        """Generate essays for all topics using hybrid approach: parallel OpenAI, sequential local."""
         print(f"Generating essays for {len(topics)} topics using {len(self.essay_models)} models...")
         print(f"  OpenAI models: {self.openai_models}")
         print(f"  Local models: {self.local_model_names}")
-        print(f"Using {self.max_workers} parallel workers")
         
-        # Create all tasks
-        tasks = []
+        all_results = []
+        
+        # Step 1: Generate OpenAI essays in parallel
+        if self.openai_models:
+            print(f"\n🌐 Generating OpenAI essays in parallel ({self.max_workers} workers)...")
+            openai_results = self._generate_openai_essays_parallel(topics)
+            all_results.extend(openai_results)
+        
+        # Step 2: Generate local model essays sequentially
+        if self.local_model_names and self.local_models:
+            print(f"\n🖥️  Generating local model essays sequentially (GPU-safe)...")
+            local_results = self._generate_local_essays_sequential(topics)
+            all_results.extend(local_results)
+        
+        # Save to CSV
+        df = pd.DataFrame(all_results)
+        df.to_csv(output_csv, index=False)
+        print(f"\n✅ Saved {len(all_results)} essays to {output_csv}")
+        return output_csv
+    
+    def _generate_openai_essays_parallel(self, topics: List[str]) -> List[Dict]:
+        """Generate essays using OpenAI models in parallel (or sequential if forced)."""
+        # Create OpenAI tasks
+        openai_tasks = []
         for topic in topics:
-            for model in self.essay_models:
-                tasks.append((topic, model))
+            for model in self.openai_models:
+                openai_tasks.append((topic, model))
         
         results = []
-        total_requests = len(tasks)
         
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all tasks
-            future_to_task = {
-                executor.submit(self._generate_essay_task, topic, model): (topic, model)
-                for topic, model in tasks
-            }
-            
-            # Process completed tasks with progress bar
-            with tqdm(total=total_requests, desc="Generating essays") as pbar:
-                for future in as_completed(future_to_task):
+        if self.force_sequential:
+            # Sequential processing for all models (useful for debugging or very limited resources)
+            with tqdm(total=len(openai_tasks), desc="OpenAI essays (sequential)") as pbar:
+                for topic, model in openai_tasks:
                     try:
-                        result = future.result()
+                        result = self._generate_essay_task(topic, model)
                         results.append(result)
                     except Exception as e:
-                        topic, model = future_to_task[future]
-                        print(f"Error with task {topic}/{model}: {e}")
+                        print(f"Error with OpenAI task {topic}/{model}: {e}")
+                        results.append({
+                            'topic': topic,
+                            'model': model,
+                            'essay': f"Error: {str(e)}",
+                            'prompt_template': f"Error generating for {topic}"
+                        })
+                    finally:
+                        pbar.update(1)
+        else:
+            # Normal parallel processing for OpenAI
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Submit all OpenAI tasks
+                future_to_task = {
+                    executor.submit(self._generate_essay_task, topic, model): (topic, model)
+                    for topic, model in openai_tasks
+                }
+                
+                # Process completed tasks with progress bar
+                with tqdm(total=len(openai_tasks), desc="OpenAI essays (parallel)") as pbar:
+                    for future in as_completed(future_to_task):
+                        try:
+                            result = future.result()
+                            results.append(result)
+                        except Exception as e:
+                            topic, model = future_to_task[future]
+                            print(f"Error with OpenAI task {topic}/{model}: {e}")
+                            # Add error result to maintain count
+                            results.append({
+                                'topic': topic,
+                                'model': model,
+                                'essay': f"Error: {str(e)}",
+                                'prompt_template': f"Error generating for {topic}"
+                            })
+                        finally:
+                            pbar.update(1)
+        
+        return results
+    
+    def _generate_local_essays_sequential(self, topics: List[str]) -> List[Dict]:
+        """Generate essays using local models sequentially (GPU-safe)."""
+        results = []
+        total_local_tasks = len(topics) * len(self.local_model_names)
+        
+        with tqdm(total=total_local_tasks, desc="Local model essays") as pbar:
+            for topic in topics:
+                for model in self.local_model_names:
+                    try:
+                        result = self._generate_essay_task(topic, model)
+                        results.append(result)
+                    except Exception as e:
+                        print(f"Error with local task {topic}/{model}: {e}")
                         # Add error result to maintain count
                         results.append({
                             'topic': topic,
@@ -294,12 +419,16 @@ class DPODataGenerator:
                         })
                     finally:
                         pbar.update(1)
+                        
+                        # Optional: Clear GPU cache after each generation to prevent memory buildup
+                        if hasattr(self, 'device') and self.device == "cuda":
+                            try:
+                                import torch
+                                torch.cuda.empty_cache()
+                            except:
+                                pass
         
-        # Save to CSV
-        df = pd.DataFrame(results)
-        df.to_csv(output_csv, index=False)
-        print(f"Saved {len(results)} essays to {output_csv}")
-        return output_csv
+        return results
     
     def judge_essay_pair(self, topic: str, essay1: str, essay2: str, model1: str, model2: str) -> Dict:
         """Use GPT to judge which essay is better."""
@@ -486,8 +615,8 @@ def main():
     print("🚀 Initializing DPO Data Generator with Hybrid Models")
     print("=" * 60)
     
-    # Initialize generator with parallel processing
-    # Adjust max_workers based on your rate limits (default 10 should be safe)
+    # Initialize generator with hybrid processing
+    # OpenAI models run in parallel, local models run sequentially (GPU-safe)
     generator = DPODataGenerator(max_workers=10)
     
     print(f"\n📊 Model Configuration:")
@@ -495,12 +624,18 @@ def main():
     print(f"  OpenAI models: {len(generator.openai_models)}")
     print(f"  Local models: {len(generator.local_model_names)}")
     
+    print(f"\n🔧 Processing Strategy:")
     if generator.device == "cuda" and generator.local_models:
-        print(f"\n🔥 CUDA detected! Using {len(generator.local_models)} local models for faster generation")
+        print(f"  🔥 CUDA detected! Using {len(generator.local_models)} local models")
+        print(f"  🌐 OpenAI models: Parallel processing ({generator.max_workers} workers)")
+        print(f"  🖥️  Local models: Sequential processing (GPU-safe)")
     elif generator.device == "cuda" and not generator.local_models:
-        print(f"\n⚠️  CUDA detected but no local models loaded (check transformers installation)")
+        print(f"  ⚠️  CUDA detected but no local models loaded")
+        print(f"  💡 Install transformers/torch for local model support")
+        print(f"  🌐 OpenAI models: Parallel processing ({generator.max_workers} workers)")
     else:
-        print(f"\n💻 Using CPU mode - only OpenAI models available")
+        print(f"  💻 CPU mode - using OpenAI models only")
+        print(f"  🌐 OpenAI models: Parallel processing ({generator.max_workers} workers)")
     
     # Run the full pipeline
     generator.generate_full_pipeline(num_topics=10)
