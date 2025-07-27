@@ -50,7 +50,7 @@ class DPODataGenerator:
         if self.device == "cuda":
             self.local_model_names = [
                 "HuggingFaceTB/SmolLM3-3B",
-                "meta-llama/Meta-Llama-3-8B-Instruct",
+                "Qwen/Qwen3-8B",
             ]
             self._load_local_models()
         
