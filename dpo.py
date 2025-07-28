@@ -123,7 +123,8 @@ class DPOTrainer_SmolGraham:
             lr_scheduler_type="cosine",
             logging_steps=10,
             eval_steps=100,
-            save_steps=200,
+            save_steps=2000,
+            save_total_limit=2,
             eval_strategy="steps",
             save_strategy="steps",
             load_best_model_at_end=True,
@@ -141,6 +142,7 @@ class DPOTrainer_SmolGraham:
             beta=0.1,  # KL penalty coefficient
             loss_type="sigmoid",  # DPO loss type
             remove_unused_columns=False,
+            save_safetensors=True
         )
         
         # Initialize DPO trainer
