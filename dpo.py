@@ -124,7 +124,7 @@ class DPOTrainer_SmolGraham:
             logging_steps=10,
             eval_steps=100,
             save_steps=200,
-            evaluation_strategy="steps",
+            eval_strategy="steps",
             save_strategy="steps",
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
@@ -137,7 +137,7 @@ class DPOTrainer_SmolGraham:
             gradient_checkpointing=True,
             max_length=1024,
             max_prompt_length=512,
-            max_target_length=512,
+            max_completion_length=512,
             beta=0.1,  # KL penalty coefficient
             loss_type="sigmoid",  # DPO loss type
             remove_unused_columns=False,
