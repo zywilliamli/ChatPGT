@@ -14,7 +14,7 @@ def train():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    model_name = "HuggingFaceTB/SmolLM3-3B"
+    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
