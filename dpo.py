@@ -115,10 +115,10 @@ class DPOTrainer_SmolGraham:
         training_args = DPOConfig(
             output_dir=output_dir,
             num_train_epochs=1,  # Start with 1 epoch for DPO
-            per_device_train_batch_size=2,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=2,
             learning_rate=1e-7,  # Lower learning rate for DPO
-            warmup_ratio=0.1,
+            warmup_ratio=0.03,
             lr_scheduler_type="cosine",
             logging_steps=10,
             eval_steps=100,
@@ -131,7 +131,6 @@ class DPOTrainer_SmolGraham:
             greater_is_better=False,
             report_to=["tensorboard"],
             fp16=False,
-            bf16=True if self.device == "cuda" else False,
             dataloader_pin_memory=True,
             dataloader_num_workers=0,
             gradient_checkpointing=True,

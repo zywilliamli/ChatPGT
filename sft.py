@@ -57,9 +57,9 @@ def train():
         learning_rate=1e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
-        logging_steps=1,
-        eval_steps=50,
-        save_steps=500,
+        logging_steps=10,
+        eval_steps=100,
+        save_steps=2000,
         weight_decay=0.005,
         report_to=["tensorboard"],  # live metrics:  http://localhost:6006
         fp16=False,
