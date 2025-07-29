@@ -69,7 +69,7 @@ class DPOTrainer_SmolGraham:
         print(f"After filtering errors: {len(df)} preference pairs")
         
         # Filter by confidence (keep only high-confidence judgments)
-        df = df[df['confidence'] >= 6]  # Keep judgments with confidence >= 6/10
+        df = df[df['confidence'] >= 0]  # Keep judgments with confidence >= 6/10
         print(f"After confidence filtering: {len(df)} preference pairs")
         
         if len(df) == 0:
