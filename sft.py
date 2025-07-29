@@ -67,7 +67,7 @@ def train():
         dataloader_pin_memory=True,
         dataloader_num_workers=0,
         gradient_checkpointing=True,
-        max_seq_length=1024,
+        # max_seq_length=1024,
         dataset_text_field="text",
         max_grad_norm=1.0
     )
