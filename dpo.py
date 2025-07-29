@@ -115,9 +115,8 @@ class DPOTrainer_SmolGraham:
         training_args = DPOConfig(
             output_dir=output_dir,
             num_train_epochs=1,  # Start with 1 epoch for DPO
-            per_device_train_batch_size=2,  # Smaller batch size for DPO
-            per_device_eval_batch_size=2,
-            gradient_accumulation_steps=4,
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=2,
             learning_rate=1e-7,  # Lower learning rate for DPO
             warmup_ratio=0.1,
             lr_scheduler_type="cosine",
@@ -136,8 +135,6 @@ class DPOTrainer_SmolGraham:
             dataloader_pin_memory=True,
             dataloader_num_workers=0,
             gradient_checkpointing=True,
-            max_length=1024,
-            max_prompt_length=512,
             beta=0.1,  # KL penalty coefficient
             loss_type="sigmoid",  # DPO loss type
             remove_unused_columns=False,
