@@ -14,7 +14,7 @@ def train():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    model_name = "HuggingFaceTB/SmolLM2-135M-Instruct"
+    model_name = "HuggingFaceTB/SmolLM3-3B"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -52,8 +52,8 @@ def train():
     cfg = SFTConfig(
         output_dir="SmolGraham",
         num_train_epochs=2,
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=2,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
         learning_rate=1e-5,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
@@ -67,7 +67,7 @@ def train():
         dataloader_pin_memory=True,
         dataloader_num_workers=0,
         gradient_checkpointing=True,
-        # max_seq_length=1024,
+        max_seq_length=1024,
         dataset_text_field="text",
         max_grad_norm=1.0
     )
