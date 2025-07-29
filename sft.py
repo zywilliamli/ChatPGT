@@ -73,10 +73,7 @@ def train():
         train_dataset=ds['train'],
         eval_dataset=ds['test'],
         args=cfg,
-        processing_class=tokenizer,
-        max_seq_length=1024,
-        packing=False,
-        dataset_text_field="text"
+        processing_class=tokenizer
     )
 
     if device == "cuda":
