@@ -95,6 +95,31 @@ class DPODataGenerator:
         print(f"Selected {len(topics)} topics for essay generation")
         return topics
     
+    def load_paul_graham_essays(self) -> List[Dict[str, str]]:
+        """Load Paul Graham essays dataset."""
+        print("Loading Paul Graham essays dataset...")
+        
+        try:
+            dataset = load_dataset("sgoel9/paul_graham_essays", split="train")
+            essays = []
+            
+            for item in dataset:
+                title = item.get('title', '').strip()
+                text = item.get('text', '').strip()
+                
+                if title and text and len(text) > 100:  # Ensure we have substantial content
+                    essays.append({
+                        'title': title,
+                        'text': text
+                    })
+            
+            print(f"Loaded {len(essays)} Paul Graham essays")
+            return essays
+            
+        except Exception as e:
+            print(f"Error loading Paul Graham essays: {e}")
+            return []
+    
     def _rate_limited_request(self, request_func, *args, **kwargs):
         """Execute a request with rate limiting."""
         with self.rate_limit_lock:
@@ -211,6 +236,53 @@ class DPODataGenerator:
         print(f"Saved {len(results)} essays to {output_csv}")
         return output_csv
     
+    def generate_paul_graham_style_essays(self, pg_essays: List[Dict[str, str]], output_csv: str = "pg_style_essays.csv"):
+        """Generate essays for Paul Graham essay titles using all models."""
+        print(f"Generating essays for {len(pg_essays)} Paul Graham essay titles using {len(self.essay_models)} models...")
+        print(f"Using {self.max_workers} parallel workers")
+        
+        # Create all tasks - generate essays for each title
+        tasks = []
+        for essay_data in pg_essays:
+            title = essay_data['title']
+            for model in self.essay_models:
+                tasks.append((title, model))
+        
+        results = []
+        total_requests = len(tasks)
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_task = {
+                executor.submit(self._generate_essay_task, title, model): (title, model)
+                for title, model in tasks
+            }
+            
+            # Process completed tasks with progress bar
+            with tqdm(total=total_requests, desc="Generating PG-style essays") as pbar:
+                for future in as_completed(future_to_task):
+                    try:
+                        result = future.result()
+                        results.append(result)
+                    except Exception as e:
+                        title, model = future_to_task[future]
+                        print(f"Error with task {title}/{model}: {e}")
+                        # Add error result to maintain count
+                        results.append({
+                            'topic': title,
+                            'model': model,
+                            'essay': f"Error: {str(e)}",
+                            'prompt_template': f"Error generating for {title}"
+                        })
+                    finally:
+                        pbar.update(1)
+        
+        # Save to CSV
+        df = pd.DataFrame(results)
+        df.to_csv(output_csv, index=False)
+        print(f"Saved {len(results)} PG-style essays to {output_csv}")
+        return output_csv
+    
     def judge_essay_pair(self, topic: str, essay1: str, essay2: str, model1: str, model2: str) -> Dict:
         """Use GPT to judge which essay is better."""
         judgment_prompt = f"""
@@ -300,7 +372,7 @@ Respond with a JSON object containing:
         }
     
     def create_dpo_pairs(self, essays_csv: str, output_csv: str = "dpo_pairs.csv"):
-        """Create DPO preference pairs from the generated essays in parallel."""
+        """Create DPO preference pairs from the generated essays - only best vs worst per topic."""
         print(f"Creating DPO pairs from {essays_csv}...")
         print(f"Using {self.max_workers} parallel workers for judgments")
         
@@ -314,15 +386,15 @@ Respond with a JSON object containing:
         
         print(f"Loaded {len(df)} essays from CSV")
         
-        # Create all comparison tasks
+        # Create all comparison tasks to determine ranking
         comparison_tasks = []
         topics = df['topic'].unique()
         
-        print("Preparing comparison tasks...")
+        print("Preparing comparison tasks for ranking...")
         for topic in topics:
             topic_essays = df[df['topic'] == topic]
             
-            # Create all possible pairs for this topic
+            # Create all possible pairs for this topic to establish complete ranking
             models = topic_essays['model'].tolist()
             essays = topic_essays['essay'].tolist()
             
@@ -347,8 +419,8 @@ Respond with a JSON object containing:
         
         print(f"Created {len(comparison_tasks)} comparison tasks")
         
-        # Process comparisons in parallel
-        dpo_pairs = []
+        # Process comparisons in parallel to get all judgments
+        all_judgments = []
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all judgment tasks
@@ -358,53 +430,332 @@ Respond with a JSON object containing:
             }
             
             # Process completed judgments with progress bar
-            with tqdm(total=len(comparison_tasks), desc="Creating DPO pairs") as pbar:
+            with tqdm(total=len(comparison_tasks), desc="Getting all judgments") as pbar:
                 for future in as_completed(future_to_task):
                     try:
-                        dpo_pair = future.result()
-                        dpo_pairs.append(dpo_pair)
+                        judgment_result = future.result()
+                        all_judgments.append(judgment_result)
                     except Exception as e:
                         topic, model1, model2 = future_to_task[future]
                         print(f"Error judging pair {topic}/{model1}/{model2}: {e}")
-                        # Add error pair to maintain count
-                        dpo_pairs.append({
-                            'topic': topic,
-                            'prompt': f"Write a Paul Graham essay about {topic}",
-                            'chosen': f"Error in judgment: {str(e)}",
-                            'rejected': f"Error in judgment: {str(e)}",
-                            'chosen_model': model1,
-                            'rejected_model': model2,
-                            'judgment_reasoning': f"Error: {str(e)}",
-                            'confidence': 1
-                        })
                     finally:
                         pbar.update(1)
+        
+        # Now create ranking for each topic and select only best vs worst
+        print("Creating rankings and selecting best vs worst pairs...")
+        final_dpo_pairs = []
+        
+        for topic in topics:
+            topic_essays = df[df['topic'] == topic]
+            topic_judgments = [j for j in all_judgments if j['topic'] == topic]
+            
+            if len(topic_judgments) == 0:
+                continue
+                
+            # Create a scoring system based on win/loss record
+            model_scores = {}
+            models_in_topic = topic_essays['model'].tolist()
+            
+            # Initialize scores
+            for model in models_in_topic:
+                model_scores[model] = 0
+            
+            # Count wins for each model
+            for judgment in topic_judgments:
+                chosen_model = judgment['chosen_model']
+                model_scores[chosen_model] += 1
+            
+            # Sort models by score to find best and worst
+            sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
+            
+            if len(sorted_models) < 2:
+                continue
+                
+            best_model = sorted_models[0][0]
+            worst_model = sorted_models[-1][0]
+            
+            # Get the actual essays
+            best_essay = topic_essays[topic_essays['model'] == best_model]['essay'].iloc[0]
+            worst_essay = topic_essays[topic_essays['model'] == worst_model]['essay'].iloc[0]
+            
+            # Create single DPO pair for this topic
+            final_dpo_pairs.append({
+                'topic': topic,
+                'prompt': f"Write a Paul Graham essay about {topic}",
+                'chosen': str(best_essay),
+                'rejected': str(worst_essay),
+                'chosen_model': best_model,
+                'rejected_model': worst_model,
+                'judgment_reasoning': f"Best model ({best_model}) vs worst model ({worst_model}) based on {len(topic_judgments)} comparisons",
+                'confidence': 8  # High confidence since based on multiple comparisons
+            })
+        
+        # Save DPO pairs
+        dpo_df = pd.DataFrame(final_dpo_pairs)
+        dpo_df.to_csv(output_csv, index=False)
+        print(f"Created {len(final_dpo_pairs)} DPO pairs (1 per topic) and saved to {output_csv}")
+        return output_csv
+    
+    def create_paul_graham_dpo_pairs(self, pg_essays: List[Dict[str, str]], pg_style_essays_csv: str, output_csv: str = "pg_dpo_pairs.csv"):
+        """Create DPO pairs where real Paul Graham essays are always chosen over LLM-generated ones."""
+        print(f"Creating Paul Graham DPO pairs from {pg_style_essays_csv}...")
+        
+        # Load the generated essays
+        df = pd.read_csv(pg_style_essays_csv)
+        
+        # Clean the data
+        df['essay'] = df['essay'].fillna("Error: Missing essay data")
+        df['topic'] = df['topic'].fillna("Unknown topic")
+        df['model'] = df['model'].fillna("Unknown model")
+        
+        print(f"Loaded {len(df)} generated essays from CSV")
+        
+        # Create a mapping of titles to real essays
+        real_essays = {essay['title']: essay['text'] for essay in pg_essays}
+        
+        dpo_pairs = []
+        
+        # For each title, create DPO pairs with real essay as chosen
+        for title in df['topic'].unique():
+            if title not in real_essays:
+                continue
+                
+            title_essays = df[df['topic'] == title]
+            real_essay = real_essays[title]
+            
+            # Create one DPO pair for each generated essay
+            for _, row in title_essays.iterrows():
+                generated_essay = str(row['essay'])
+                model = row['model']
+                
+                # Skip if generated essay has errors or is too short
+                if generated_essay.startswith("Error:") or len(generated_essay.strip()) < 50:
+                    continue
+                
+                dpo_pairs.append({
+                    'topic': title,
+                    'prompt': f"Write a Paul Graham essay titled {title}",
+                    'chosen': real_essay,  # Always choose the real Paul Graham essay
+                    'rejected': generated_essay,  # Always reject the LLM-generated essay
+                    'chosen_model': 'paul_graham_real',
+                    'rejected_model': model,
+                    'judgment_reasoning': 'Real Paul Graham essay always preferred over generated',
+                    'confidence': 10  # Maximum confidence
+                })
         
         # Save DPO pairs
         dpo_df = pd.DataFrame(dpo_pairs)
         dpo_df.to_csv(output_csv, index=False)
-        print(f"Created {len(dpo_pairs)} DPO pairs and saved to {output_csv}")
+        print(f"Created {len(dpo_pairs)} Paul Graham DPO pairs and saved to {output_csv}")
         return output_csv
     
-    def generate_full_pipeline(self, num_topics: int = 1000):
+    def generate_full_pipeline(self, num_topics: int = 1000, include_pg_essays: bool = True):
         """Run the complete DPO data generation pipeline."""
         print("Starting DPO data generation pipeline...")
         
-        # Step 1: Load topics
-        topics = self.load_wikipedia_data(num_topics)
+        all_dpo_files = []
         
-        # Step 2: Generate essays
-        essays_csv = self.generate_all_essays(topics)
+        # Step 1: Wikipedia-based pipeline
+        if num_topics > 0:
+            print("\n=== Wikipedia Topics Pipeline ===")
+            topics = self.load_wikipedia_data(num_topics)
+            essays_csv = self.generate_all_essays(topics)
+            dpo_csv = self.create_dpo_pairs(essays_csv)
+            all_dpo_files.append(dpo_csv)
         
-        # Step 3: Create DPO pairs
-        dpo_csv = self.create_dpo_pairs(essays_csv)
+        # Step 2: Paul Graham essays pipeline
+        if include_pg_essays:
+            print("\n=== Paul Graham Essays Pipeline ===")
+            pg_essays = self.load_paul_graham_essays()
+            
+            if pg_essays:
+                pg_style_essays_csv = self.generate_paul_graham_style_essays(pg_essays)
+                pg_dpo_csv = self.create_paul_graham_dpo_pairs(pg_essays, pg_style_essays_csv)
+                all_dpo_files.append(pg_dpo_csv)
         
-        print(f"Pipeline complete! DPO data saved to {dpo_csv}")
-        return dpo_csv
+        # Combine all DPO files if multiple exist
+        if len(all_dpo_files) > 1:
+            print("\n=== Combining DPO datasets ===")
+            combined_df = pd.DataFrame()
+            
+            for file in all_dpo_files:
+                df = pd.read_csv(file)
+                combined_df = pd.concat([combined_df, df], ignore_index=True)
+            
+            combined_csv = "combined_dpo_pairs.csv"
+            combined_df.to_csv(combined_csv, index=False)
+            print(f"Combined {len(combined_df)} total DPO pairs and saved to {combined_csv}")
+            return combined_csv
+        elif len(all_dpo_files) == 1:
+            print(f"Pipeline complete! DPO data saved to {all_dpo_files[0]}")
+            return all_dpo_files[0]
+        else:
+            print("No DPO pairs were generated.")
+            return None
+    
+    def process_existing_dpo_pairs(self, existing_csv: str, output_csv: str = "processed_dpo_pairs.csv"):
+        """Process existing DPO pairs to keep only best vs worst per topic."""
+        print(f"Processing existing DPO pairs from {existing_csv}...")
+        
+        # Load existing DPO pairs
+        df = pd.read_csv(existing_csv)
+        print(f"Loaded {len(df)} existing DPO pairs")
+        
+        # Group by topic and create rankings
+        final_dpo_pairs = []
+        topics = df['topic'].unique()
+        
+        print(f"Processing {len(topics)} unique topics...")
+        
+        for topic in topics:
+            topic_pairs = df[df['topic'] == topic]
+            
+            if len(topic_pairs) == 0:
+                continue
+            
+            # Create model win/loss records from existing judgments
+            model_scores = {}
+            
+            for _, row in topic_pairs.iterrows():
+                chosen_model = row['chosen_model']
+                rejected_model = row['rejected_model']
+                
+                # Initialize scores if not seen
+                if chosen_model not in model_scores:
+                    model_scores[chosen_model] = 0
+                if rejected_model not in model_scores:
+                    model_scores[rejected_model] = 0
+                
+                # Winner gets a point
+                model_scores[chosen_model] += 1
+            
+            if len(model_scores) < 2:
+                continue
+            
+            # Sort models by score to find best and worst
+            sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
+            best_model = sorted_models[0][0]
+            worst_model = sorted_models[-1][0]
+            
+            # Find the actual chosen/rejected essays for best vs worst
+            best_essay = None
+            worst_essay = None
+            
+            # Look for a pair where best_model was chosen
+            for _, row in topic_pairs.iterrows():
+                if row['chosen_model'] == best_model:
+                    best_essay = row['chosen']
+                    break
+            
+            # Look for a pair where worst_model was rejected
+            for _, row in topic_pairs.iterrows():
+                if row['rejected_model'] == worst_model:
+                    worst_essay = row['rejected']
+                    break
+            
+            # If we couldn't find essays, use any pair involving these models
+            if best_essay is None or worst_essay is None:
+                for _, row in topic_pairs.iterrows():
+                    if row['chosen_model'] == best_model and best_essay is None:
+                        best_essay = row['chosen']
+                    if row['rejected_model'] == worst_model and worst_essay is None:
+                        worst_essay = row['rejected']
+                    if row['chosen_model'] == worst_model and worst_essay is None:
+                        worst_essay = row['chosen']
+                    if row['rejected_model'] == best_model and best_essay is None:
+                        best_essay = row['rejected']
+            
+            if best_essay is not None and worst_essay is not None:
+                # Get a representative row for other metadata
+                sample_row = topic_pairs.iloc[0]
+                
+                final_dpo_pairs.append({
+                    'topic': topic,
+                    'prompt': sample_row.get('prompt', f"Write a Paul Graham essay about {topic}"),
+                    'chosen': best_essay,
+                    'rejected': worst_essay,
+                    'chosen_model': best_model,
+                    'rejected_model': worst_model,
+                    'judgment_reasoning': f"Best model ({best_model}, {model_scores[best_model]} wins) vs worst model ({worst_model}, {model_scores[worst_model]} wins) from {len(topic_pairs)} original pairs",
+                    'confidence': min(10, max(1, int(len(topic_pairs) / 2)))  # Confidence based on number of comparisons
+                })
+        
+        # Save processed DPO pairs
+        processed_df = pd.DataFrame(final_dpo_pairs)
+        processed_df.to_csv(output_csv, index=False)
+        print(f"Processed {len(df)} pairs down to {len(final_dpo_pairs)} pairs (1 per topic) and saved to {output_csv}")
+        return output_csv
+    
+    def add_paul_graham_pairs_to_existing(self, existing_csv: str, output_csv: str = "enhanced_dpo_pairs.csv"):
+        """Add Paul Graham essay DPO pairs to existing DPO dataset without regenerating."""
+        print(f"Adding Paul Graham pairs to existing DPO dataset from {existing_csv}...")
+        
+        # Load existing DPO pairs
+        existing_df = pd.read_csv(existing_csv)
+        print(f"Loaded {len(existing_df)} existing DPO pairs")
+        
+        # Load Paul Graham essays
+        pg_essays = self.load_paul_graham_essays()
+        
+        if not pg_essays:
+            print("No Paul Graham essays loaded, skipping PG pair generation")
+            return existing_csv
+        
+        # Generate essays for PG titles
+        print("Generating LLM essays for Paul Graham titles...")
+        pg_style_essays_csv = self.generate_paul_graham_style_essays(pg_essays, "temp_pg_style_essays.csv")
+        
+        # Create PG DPO pairs
+        pg_dpo_csv = self.create_paul_graham_dpo_pairs(pg_essays, pg_style_essays_csv, "temp_pg_dpo_pairs.csv")
+        
+        # Load and combine with existing
+        pg_df = pd.read_csv(pg_dpo_csv)
+        combined_df = pd.concat([existing_df, pg_df], ignore_index=True)
+        
+        # Save combined dataset
+        combined_df.to_csv(output_csv, index=False)
+        print(f"Combined {len(existing_df)} existing + {len(pg_df)} Paul Graham pairs = {len(combined_df)} total pairs")
+        print(f"Enhanced dataset saved to {output_csv}")
+        
+        # Clean up temporary files
+        try:
+            os.remove("temp_pg_style_essays.csv")
+            os.remove("temp_pg_dpo_pairs.csv")
+        except:
+            pass
+        
+        return output_csv
+    
+    def update_existing_dpo_data(self, existing_csv: str = "dpo_pairs.csv", output_csv: str = "updated_dpo_pairs.csv"):
+        """Apply both updates to existing DPO data: filter to best/worst + add Paul Graham pairs."""
+        print("=== Updating Existing DPO Data ===")
+        print(f"Input: {existing_csv}")
+        print(f"Output: {output_csv}")
+        
+        # Step 1: Process existing pairs to keep only best vs worst
+        print("\nStep 1: Processing existing pairs to keep only best vs worst per topic...")
+        processed_csv = "temp_processed_pairs.csv"
+        self.process_existing_dpo_pairs(existing_csv, processed_csv)
+        
+        # Step 2: Add Paul Graham pairs
+        print("\nStep 2: Adding Paul Graham essay pairs...")
+        final_csv = self.add_paul_graham_pairs_to_existing(processed_csv, output_csv)
+        
+        # Clean up temporary file
+        try:
+            os.remove(processed_csv)
+        except:
+            pass
+        
+        print(f"\n=== Update Complete ===")
+        print(f"Updated DPO dataset saved to {final_csv}")
+        return final_csv
 
 
 def main():
     """Main function to run the DPO data generation."""
+    import sys
+    
     # Check for API keys
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
     has_openrouter = bool(os.getenv("OPENROUTER_API_KEY"))
@@ -416,18 +767,12 @@ def main():
         print("  - OPENROUTER_API_KEY (for open source models)")
         return
     
-    if not has_openai:
-        print("⚠️  WARNING: No OpenAI API key found. Judgment will fail.")
-        print("Please set OPENAI_API_KEY for essay judging functionality.")
-        return
-    
     print("🔑 API Keys Status:")
     print(f"  - OpenAI: {'✅ Found' if has_openai else '❌ Missing'}")
     print(f"  - OpenRouter: {'✅ Found' if has_openrouter else '❌ Missing'}")
     print()
     
     # Initialize generator with parallel processing
-    # Adjust max_workers based on your rate limits (default 10 should be safe)
     generator = DPODataGenerator(max_workers=10)
     
     print(f"📝 Models available for essay generation ({len(generator.essay_models)} total):")
@@ -438,8 +783,32 @@ def main():
             print(f"  - {model} (OpenRouter)")
     print()
     
-    # Run the full pipeline
-    generator.generate_full_pipeline(num_topics=1000)
+    # Check for command line arguments to determine mode
+    if len(sys.argv) > 1 and sys.argv[1] == "--update-existing":
+        # Update existing DPO data mode
+        existing_file = sys.argv[2] if len(sys.argv) > 2 else "dpo_pairs.csv"
+        output_file = sys.argv[3] if len(sys.argv) > 3 else "updated_dpo_pairs.csv"
+        
+        print(f"📁 Updating existing DPO data from: {existing_file}")
+        if not os.path.exists(existing_file):
+            print(f"❌ ERROR: File {existing_file} not found!")
+            return
+        
+        generator.update_existing_dpo_data(existing_file, output_file)
+    else:
+        # Full pipeline mode
+        print("🚀 Running full pipeline...")
+        if not has_openai:
+            print("⚠️  WARNING: No OpenAI API key found. Judgment will fail.")
+            print("Please set OPENAI_API_KEY for essay judging functionality.")
+            return
+        
+        generator.generate_full_pipeline(num_topics=1000, include_pg_essays=True)
+
+def update_existing_dpo_data(existing_csv: str = "dpo_pairs.csv", output_csv: str = "updated_dpo_pairs.csv"):
+    """Convenience function to update existing DPO data without running full pipeline."""
+    generator = DPODataGenerator(max_workers=10)
+    return generator.update_existing_dpo_data(existing_csv, output_csv)
 
 
 if __name__ == "__main__":
