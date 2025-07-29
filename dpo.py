@@ -209,6 +209,7 @@ class DPOTrainer_SmolGraham:
             # Generate
             output = pipe(
                 formatted_prompt,
+                max_new_tokens=1024,
                 do_sample=True,
                 top_p=0.9,
                 temperature=0.7,
