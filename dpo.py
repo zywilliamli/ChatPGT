@@ -138,7 +138,6 @@ class DPOTrainer_SmolGraham:
             gradient_checkpointing=True,
             max_length=1024,
             max_prompt_length=512,
-            max_completion_length=512,
             beta=0.1,  # KL penalty coefficient
             loss_type="sigmoid",  # DPO loss type
             remove_unused_columns=False,
