@@ -178,7 +178,7 @@ class DPOTrainer_SmolGraham:
         
         # Test prompts
         test_prompts = [
-            "Write a Paul Graham essay about the future of artificial intelligence",
+            "Write a Paul Graham essay about the power of AI",
             "Write a Paul Graham essay about startups and entrepreneurship",
             "Write a Paul Graham essay about the importance of simplicity in design"
         ]
@@ -208,7 +208,6 @@ class DPOTrainer_SmolGraham:
                 do_sample=True,
                 top_p=0.9,
                 temperature=0.7,
-                pad_token_id=self.tokenizer.eos_token_id
             )[0]["generated_text"]
             
             # Extract only the generated part
