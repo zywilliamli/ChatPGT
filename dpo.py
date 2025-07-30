@@ -96,7 +96,7 @@ class DPOTrainer_SmolGraham:
         dataset = Dataset.from_list(dpo_data)
         
         # Split into train/validation
-        dataset = dataset.train_test_split(test_size=0.1, seed=42)
+        dataset = dataset.train_test_split(test_size=0.2, seed=42)
         
         print(f"Training samples: {len(dataset['train'])}")
         print(f"Validation samples: {len(dataset['test'])}")
@@ -114,10 +114,10 @@ class DPOTrainer_SmolGraham:
         # Configure DPO training
         training_args = DPOConfig(
             output_dir=output_dir,
-            num_train_epochs=1,  # Start with 1 epoch for DPO
-            per_device_train_batch_size=1,
-            gradient_accumulation_steps=2,
-            learning_rate=1e-7,  # Lower learning rate for DPO
+            num_train_epochs=2,  # Start with 1 epoch for DPO
+            per_device_train_batch_size=2,
+            gradient_accumulation_steps=4,
+            learning_rate=5e-7,  # Lower learning rate for DPO
             warmup_ratio=0.03,
             lr_scheduler_type="cosine",
             logging_steps=10,
