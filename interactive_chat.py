@@ -115,8 +115,6 @@ class InteractiveChat:
             "temperature": 0.7,
             "top_p": 0.9,
             "max_new_tokens": 1024,
-            "pad_token_id": self.tokenizer.pad_token_id,
-            "eos_token_id": self.tokenizer.eos_token_id,
         }
         
         # Only specify device for CPU usage (device_map="auto" handles CUDA automatically)
