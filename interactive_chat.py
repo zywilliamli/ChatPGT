@@ -134,7 +134,7 @@ class InteractiveChat:
             return prompt
         except Exception as e:
             print(f"⚠️  Warning: Could not apply chat template ({e}), using simple format")
-            return f"### User: {user_input}\\n### Assistant: "
+            return f"### User: {user_input}\n### Assistant: "
     
     def generate_response(self, user_input: str) -> str:
         """Generate a response to user input."""
@@ -153,7 +153,7 @@ class InteractiveChat:
             # Extract the generated text
             generated_text = outputs[0]["generated_text"]
             
-            return response
+            return generated_text
             
         except Exception as e:
             return f"❌ Error generating response: {str(e)}"
@@ -165,7 +165,7 @@ class InteractiveChat:
         while True:
             try:
                 # Get user input
-                user_input = input("\\n👤 You: ").strip()
+                user_input = input("\n👤 You: ").strip()
                 
                 # Check for exit commands
                 if user_input.lower() in ['quit', 'exit', 'q']:
@@ -191,10 +191,10 @@ class InteractiveChat:
                     conversation_history = conversation_history[-20:]
                     
             except KeyboardInterrupt:
-                print("\\n👋 Goodbye!")
+                print("\n👋 Goodbye!")
                 break
             except Exception as e:
-                print(f"\\n❌ Error: {str(e)}")
+                print(f"\n❌ Error: {str(e)}")
                 continue
     
     def run(self):
