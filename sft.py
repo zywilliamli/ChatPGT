@@ -95,8 +95,8 @@ def train():
          "content": "Write a Paul Graham essay about the power of AI"}
     ]
     # Load the saved tokenizer to ensure consistency with the trained model
-    saved_tokenizer = AutoTokenizer.from_pretrained(cfg.output_dir)
-    prompt = saved_tokenizer.apply_chat_template(
+    # saved_tokenizer = AutoTokenizer.from_pretrained(cfg.output_dir)
+    prompt = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=True  # tells the model “your turn next”
