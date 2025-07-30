@@ -106,15 +106,11 @@ class InteractiveChat:
         """Setup the text generation pipeline."""
         print("⚙️  Setting up generation pipeline...")
         
-        # Don't specify device when using device_map="auto" (CUDA case)
+        # Create pipeline without generation parameters (set them during generation instead)
         pipeline_kwargs = {
             "model": self.model,
             "tokenizer": self.tokenizer,
             "torch_dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
-            "do_sample": True,
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "max_new_tokens": 1024,
         }
         
         # Only specify device for CPU usage (device_map="auto" handles CUDA automatically)
