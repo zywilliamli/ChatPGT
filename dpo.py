@@ -134,7 +134,7 @@ class DPOTrainer_SmolGraham:
             dataloader_pin_memory=True,
             dataloader_num_workers=0,
             gradient_checkpointing=True,
-            beta=0.3,  # KL penalty coefficient
+            beta=0.2,  # KL penalty coefficient
             loss_type="sigmoid",  # DPO loss type
             remove_unused_columns=False,
             save_safetensors=True
