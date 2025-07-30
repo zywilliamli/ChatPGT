@@ -1,5 +1,5 @@
 import os
-
+import random
 import torch
 from datasets import load_dataset
 from transformers import (
@@ -32,8 +32,14 @@ def train():
     raw = load_dataset("sgoel9/paul_graham_essays")['train']
 
     def build_chat(example: dict) -> dict:
+        prompts = [
+            f"Write a Paul Graham essay titled {example['title']}",
+            f"Create an essay in Paul Graham's style about {example['title']}",
+            f"Discuss {example['title']} in the manner of Paul Graham"
+        ]
+        prompt = random.choice(prompts)
         messages = [
-            {"role": "user", "content": f"Write a Paul Graham essay titled {example['title']}"},
+            {"role": "user", "content": prompt},
             {"role": "assistant", "content": str(example["text"])}
         ]
         text = tokenizer.apply_chat_template(
@@ -63,12 +69,12 @@ def train():
         weight_decay=0.005,
         report_to=["tensorboard"],  # live metrics:  http://localhost:6006
         fp16=False,
-        packing=False,  # set True if packing multiple msgs
         dataloader_pin_memory=True,
         dataloader_num_workers=0,
         gradient_checkpointing=True,
         dataset_text_field="text",
-        max_grad_norm=1.0
+        max_grad_norm=1.0,
+        packing=True
     )
     trainer = SFTTrainer(
         model=model,
