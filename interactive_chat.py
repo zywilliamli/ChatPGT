@@ -153,12 +153,6 @@ class InteractiveChat:
             # Extract the generated text
             generated_text = outputs[0]["generated_text"]
             
-            # Remove the prompt from the response
-            if generated_text.startswith(prompt):
-                response = generated_text[len(prompt):].strip()
-            else:
-                response = generated_text.strip()
-            
             return response
             
         except Exception as e:
