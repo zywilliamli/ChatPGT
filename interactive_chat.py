@@ -108,19 +108,24 @@ class InteractiveChat:
         """Setup the text generation pipeline."""
         print("⚙️  Setting up generation pipeline...")
         
-        self.pipe = pipeline(
-            "text-generation",
-            model=self.model,
-            tokenizer=self.tokenizer,
-            device=0 if self.device == "cuda" else -1,
-            torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            max_new_tokens=1024,
-            pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-        )
+        # Don't specify device when using device_map="auto" (CUDA case)
+        pipeline_kwargs = {
+            "model": self.model,
+            "tokenizer": self.tokenizer,
+            "torch_dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
+            "do_sample": True,
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_new_tokens": 1024,
+            "pad_token_id": self.tokenizer.pad_token_id,
+            "eos_token_id": self.tokenizer.eos_token_id,
+        }
+        
+        # Only specify device for CPU usage (device_map="auto" handles CUDA automatically)
+        if self.device == "cpu":
+            pipeline_kwargs["device"] = -1
+        
+        self.pipe = pipeline("text-generation", **pipeline_kwargs)
     
     def format_prompt(self, user_input: str) -> str:
         """Format user input into the appropriate chat format."""
