@@ -117,7 +117,7 @@ class DPOTrainer_SmolGraham:
             num_train_epochs=1,  # Start with 1 epoch for DPO
             per_device_train_batch_size=2,
             gradient_accumulation_steps=4,
-            learning_rate=5e-7,  # Lower learning rate for DPO
+            learning_rate=1e-7,  # Lower learning rate for DPO
             warmup_ratio=0.03,
             lr_scheduler_type="cosine",
             logging_steps=10,
