@@ -168,6 +168,9 @@ class DPOTrainer_SmolGraham:
         """Test the DPO-trained model with a sample generation."""
         print(f"🧪 Testing DPO model from {model_dir}")
         
+        # Load the tokenizer from the trained DPO model to ensure consistency
+        dpo_tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        
         # Load the trained model for inference
         pipe = pipeline(
             "text-generation",
@@ -195,7 +198,7 @@ class DPOTrainer_SmolGraham:
             
             # Format as conversation
             messages = [{"role": "user", "content": test_prompt}]
-            formatted_prompt = self.tokenizer.apply_chat_template(
+            formatted_prompt = dpo_tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
                 add_generation_prompt=True
