@@ -89,9 +89,7 @@ class InteractiveChat:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
-        # Set chat template if not present (for SmolLM models)
-        if self.tokenizer.chat_template is None:
-            self.tokenizer.chat_template = "{% for message in messages %}{% if message['role'] == 'user' %}### User: {{ message['content'] }}{% elif message['role'] == 'assistant' %}### Assistant: {{ message['content'] }}{% endif %}{% if not loop.last %}\\n{% endif %}{% endfor %}"
+        # Keep original chat template to maintain model behavior consistency
         
         # Load model
         self.model = AutoModelForCausalLM.from_pretrained(
