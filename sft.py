@@ -98,14 +98,15 @@ def train(hub_model_name: str = None):
     if hub_model_name:
         print(f"🚀 Pushing model to Hugging Face Hub: {hub_model_name}")
         try:
-            # Push model
-            trainer.model.push_to_hub(hub_model_name, use_auth_token=True)
+            # Push model (token is automatically retrieved from HF_TOKEN env var or ~/.cache/huggingface/token)
+            trainer.model.push_to_hub(hub_model_name)
             # Push tokenizer
-            tokenizer.push_to_hub(hub_model_name, use_auth_token=True)
+            tokenizer.push_to_hub(hub_model_name)
             print(f"✅ Model successfully pushed to {hub_model_name}")
         except Exception as e:
             print(f"❌ Failed to push to hub: {e}")
             print("💡 Make sure you're logged in with `huggingface-cli login`")
+            print("💡 Or set the HF_TOKEN environment variable with your token")
 
     pipe = pipeline(
         "text-generation",
