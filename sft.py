@@ -10,7 +10,7 @@ from transformers import (
 from trl import SFTTrainer, SFTConfig
 
 
-def train():
+def train(hub_model_name: str = None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
@@ -74,7 +74,10 @@ def train():
         gradient_checkpointing=True,
         dataset_text_field="text",
         max_grad_norm=1.0,
-        packing=False
+        packing=False,
+        # Add hub integration
+        push_to_hub=True if hub_model_name else False,
+        hub_model_id=hub_model_name if hub_model_name else None,
     )
     trainer = SFTTrainer(
         model=model,
@@ -90,6 +93,19 @@ def train():
     trainer.train()
     trainer.save_model(cfg.output_dir)
     tokenizer.save_pretrained(cfg.output_dir)
+    
+    # Push to hub if specified
+    if hub_model_name:
+        print(f"🚀 Pushing model to Hugging Face Hub: {hub_model_name}")
+        try:
+            # Push model
+            trainer.model.push_to_hub(hub_model_name, use_auth_token=True)
+            # Push tokenizer
+            tokenizer.push_to_hub(hub_model_name, use_auth_token=True)
+            print(f"✅ Model successfully pushed to {hub_model_name}")
+        except Exception as e:
+            print(f"❌ Failed to push to hub: {e}")
+            print("💡 Make sure you're logged in with `huggingface-cli login`")
 
     pipe = pipeline(
         "text-generation",
@@ -105,7 +121,7 @@ def train():
     prompt = saved_tokenizer.apply_chat_template(
         messages,
         tokenize=False,
-        add_generation_prompt=True  # tells the model “your turn next”
+        add_generation_prompt=True  # tells the model "your turn next"
     )
     out = pipe(
         prompt,
@@ -115,8 +131,13 @@ def train():
         temperature=0.7
     )[0]["generated_text"]
     print(out)
+    
+    return hub_model_name if hub_model_name else cfg.output_dir
 
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    train()
+    # You can specify a hub model name here, e.g., "your-username/SmolGraham"
+    # If None, will only save locally
+    hub_name = os.getenv("HF_MODEL_NAME", "SmolGraham-SFT")  # Default hub name
+    train(hub_name)

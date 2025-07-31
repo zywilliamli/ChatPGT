@@ -11,3 +11,4 @@ httpx
 accelerate
 peft
 bitsandbytes
+huggingface_hub

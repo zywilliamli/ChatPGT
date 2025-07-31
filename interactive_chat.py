@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Interactive chat script for testing SFT and DPO trained models.
-Supports loading models from either sft.py or dpo.py outputs.
+Supports loading models from either local directories or Hugging Face Hub.
 """
 import os
 import sys
@@ -22,22 +22,26 @@ class InteractiveChat:
         Initialize interactive chat interface.
         
         Args:
-            model_path: Path to the trained model directory
+            model_path: Path to the trained model directory OR Hugging Face Hub model name
             model_type: Type of model ("sft", "dpo", or "auto" for auto-detection)
         """
         self.model_path = model_path
         self.model_type = model_type
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
+        # Detect if this is a Hub model or local path
+        self.is_hub_model = self._is_hub_model(model_path)
+        
         print(f"🤖 Interactive Chat Interface")
-        print(f"📁 Model path: {model_path}")
+        print(f"📁 Model: {model_path}")
+        print(f"🌐 Source: {'Hugging Face Hub' if self.is_hub_model else 'Local directory'}")
         print(f"🔧 Model type: {model_type}")
         print(f"💻 Device: {self.device}")
         print("-" * 50)
         
-        # Validate model path
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model directory not found: {model_path}")
+        # Validate model path/name
+        if not self.is_hub_model and not os.path.exists(model_path):
+            raise FileNotFoundError(f"Local model directory not found: {model_path}")
         
         # Auto-detect model type if needed
         if model_type == "auto":
@@ -54,9 +58,30 @@ class InteractiveChat:
         print("💬 Type your messages below (type 'quit', 'exit', or Ctrl+C to exit)")
         print("-" * 50)
     
+    def _is_hub_model(self, model_path: str) -> bool:
+        """Detect if model_path is a Hub model name or local path."""
+        # Hub model names typically contain a slash (username/model-name)
+        # and don't exist as local directories
+        if "/" in model_path and not os.path.exists(model_path):
+            return True
+        # Also check for common hub patterns
+        if model_path.startswith(("hf://", "huggingface://")) or \
+           (len(model_path.split("/")) == 2 and not os.path.exists(model_path)):
+            return True
+        return False
+    
     def _detect_model_type(self) -> str:
         """Auto-detect whether this is an SFT or DPO model."""
-        # Check for DPO-specific files or indicators
+        if self.is_hub_model:
+            # For hub models, use naming convention hints
+            if "dpo" in self.model_path.lower():
+                return "dpo"
+            elif "sft" in self.model_path.lower():
+                return "sft"
+            else:
+                return "sft"  # Default for hub models
+        
+        # For local models, use existing detection logic
         config_file = os.path.join(self.model_path, "config.json")
         if os.path.exists(config_file):
             try:
@@ -82,25 +107,33 @@ class InteractiveChat:
         """Load the model and tokenizer."""
         print("📥 Loading model and tokenizer...")
         
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-        
-        # Set pad token if not present
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        
-        # Keep original chat template to maintain model behavior consistency
-        
-        # Load model
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.model_path,
-            torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32,
-            device_map="auto" if self.device == "cuda" else None,
-            low_cpu_mem_usage=True
-        )
-        
-        if self.device == "cpu":
-            self.model = self.model.to(self.device)
+        try:
+            # Load tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+            
+            # Set pad token if not present
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+            # Load model
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.model_path,
+                torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32,
+                device_map="auto" if self.device == "cuda" else None,
+                low_cpu_mem_usage=True
+            )
+            
+            if self.device == "cpu":
+                self.model = self.model.to(self.device)
+                
+        except Exception as e:
+            if self.is_hub_model:
+                print(f"❌ Failed to load model from Hugging Face Hub: {e}")
+                print("💡 Make sure the model exists and you have access to it")
+                print("💡 For private models, login with `huggingface-cli login`")
+            else:
+                print(f"❌ Failed to load local model: {e}")
+            raise
     
     def setup_pipeline(self):
         """Setup the text generation pipeline."""
@@ -204,7 +237,10 @@ class InteractiveChat:
 
 def main():
     parser = argparse.ArgumentParser(description="Interactive chat with SFT/DPO trained models")
-    parser.add_argument("model_path", help="Path to the trained model directory")
+    parser.add_argument(
+        "model_path", 
+        help="Path to the trained model directory OR Hugging Face Hub model name (e.g., 'username/model-name')"
+    )
     parser.add_argument(
         "--type", 
         choices=["sft", "dpo", "auto"], 
@@ -227,6 +263,10 @@ def main():
         print("   • How would Paul Graham analyze the current tech bubble?")
         print("   • Write about programming languages like Paul Graham would")
         print()
+        print("📋 Example model names:")
+        print("   • Local: SmolGraham or SmolGraham-DPO")
+        print("   • Hub: username/SmolGraham-SFT or username/SmolGraham-DPO")
+        print()
     
     try:
         # Create and run interactive chat
@@ -236,6 +276,7 @@ def main():
     except FileNotFoundError as e:
         print(f"❌ Error: {e}")
         print("💡 Make sure you've trained a model first using sft.py or dpo.py")
+        print("💡 Or provide a valid Hugging Face Hub model name")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Unexpected error: {e}")

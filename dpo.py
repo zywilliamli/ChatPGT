@@ -103,7 +103,7 @@ class DPOTrainer_SmolGraham:
         
         return dataset
     
-    def train_dpo(self, output_dir: str = "SmolGraham-DPO"):
+    def train_dpo(self, output_dir: str = "SmolGraham-DPO", hub_model_name: str = None):
         """Train the model using DPO."""
         print("Starting DPO training...")
         
@@ -137,7 +137,10 @@ class DPOTrainer_SmolGraham:
             beta=0.2,  # KL penalty coefficient
             loss_type="sigmoid",  # DPO loss type
             remove_unused_columns=False,
-            save_safetensors=True
+            save_safetensors=True,
+            # Add hub integration
+            push_to_hub=True if hub_model_name else False,
+            hub_model_id=hub_model_name if hub_model_name else None,
         )
         
         # Initialize DPO trainer
@@ -162,7 +165,20 @@ class DPOTrainer_SmolGraham:
         dpo_trainer.save_model(output_dir)
         tokenizer.save_pretrained(output_dir)
         
-        return output_dir
+        # Push to hub if specified
+        if hub_model_name:
+            print(f"🚀 Pushing DPO model to Hugging Face Hub: {hub_model_name}")
+            try:
+                # Push model
+                dpo_trainer.model.push_to_hub(hub_model_name, use_auth_token=True)
+                # Push tokenizer
+                tokenizer.push_to_hub(hub_model_name, use_auth_token=True)
+                print(f"✅ DPO model successfully pushed to {hub_model_name}")
+            except Exception as e:
+                print(f"❌ Failed to push to hub: {e}")
+                print("💡 Make sure you're logged in with `huggingface-cli login`")
+        
+        return hub_model_name if hub_model_name else output_dir
     
     def test_model(self, model_dir: str):
         """Test the DPO-trained model with a sample generation."""
@@ -218,19 +234,21 @@ class DPOTrainer_SmolGraham:
             print(generated_text)
             print("-" * 30)
     
-    def run_full_pipeline(self, output_dir: str = "SmolGraham-DPO"):
+    def run_full_pipeline(self, output_dir: str = "SmolGraham-DPO", hub_model_name: str = None):
         """Run the complete DPO training pipeline."""
         print("🔥 Starting DPO Training Pipeline")
         print("=" * 50)
         
         try:
             # Train with DPO
-            final_model_dir = self.train_dpo(output_dir)
+            final_model_dir = self.train_dpo(output_dir, hub_model_name)
             
             # Test the model
-            self.test_model(final_model_dir)
+            self.test_model(output_dir)  # Still test the local version
             
-            print(f"\n✅ DPO training complete! Model saved to: {final_model_dir}")
+            print(f"\n✅ DPO training complete! Model saved to: {output_dir}")
+            if hub_model_name:
+                print(f"✅ Model also pushed to Hub: {hub_model_name}")
             print("\nYou can now use this model for improved Paul Graham essay generation!")
             
             return final_model_dir
@@ -263,9 +281,12 @@ def main():
     print(f"✅ SFT model: {sft_model_path}")
     print(f"✅ DPO data: {dpo_data_path}")
     
+    # Get hub model name from environment or use default
+    hub_name = os.getenv("HF_DPO_MODEL_NAME", "SmolGraham-DPO")
+    
     # Initialize and run DPO training
     trainer = DPOTrainer_SmolGraham(sft_model_path, dpo_data_path)
-    trainer.run_full_pipeline()
+    trainer.run_full_pipeline(hub_model_name=hub_name)
 
 
 if __name__ == "__main__":
